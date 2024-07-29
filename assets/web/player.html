@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HLS Player with Enhanced Encryption Handling</title>
+    <!--script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script-->
+	<script src="jsplayer.js"></script>
+    <style>
+        #videoContainer { max-width: 640px; margin: 20px auto; }
+        #videoElement { width: 100%; }
+        #errorMessage { color: red; text-align: center; display: none; margin-top: 10px; }
+        #debugInfo { margin-top: 20px; padding: 10px; background-color: #f0f0f0; border: 1px solid #ccc; white-space: pre-wrap; font-family: monospace; max-height: 200px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <div id="videoContainer">
+        <video id="videoElement" controls></video>
+        <div id="errorMessage"></div>
+        <div id="debugInfo"></div>
+    </div>
+
+    <script>
+        const video = document.getElementById('videoElement');
+        const errorMessage = document.getElementById('errorMessage');
+        const debugInfo = document.getElementById('debugInfo');
+        const videoSrc = 'playlist.m3u8'; // Replace with your HLS stream URL
+
+        function initPlayer() {
+            if (Hls.isSupported()) {
+                const hls = new Hls({
+                    debug: true,
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 90,
+                    // Force to use the JavaScript AES implementation
+                    enableSoftwareAES: true
+                });
+
+                hls.loadSource(videoSrc);
+                hls.attachMedia(video);
+
+                hls.on(Hls.Events.MANIFEST_PARSED, () => {
+                    updateDebugInfo('Manifest parsed successfully');
+                    video.play().catch(e => updateDebugInfo(`Autoplay prevented: ${e}`));
+                });
+
+                hls.on(Hls.Events.ERROR, (event, data) => {
+                    updateDebugInfo(`Error: ${data.type} - ${data.details}`);
+                    if (data.fatal) {
+                        switch (data.type) {
+                            case Hls.ErrorTypes.NETWORK_ERROR:
+                                handleNetworkError(hls, data);
+                                break;
+                            case Hls.ErrorTypes.MEDIA_ERROR:
+                                handleMediaError(hls, data);
+                                break;
+                            default:
+                                handleFatalError(hls, data);
+                                break;
+                        }
+                    }
+                });
+
+                hls.on(Hls.Events.BUFFER_CREATED, (event, data) => {
+                    updateDebugInfo(`Buffer created: ${data.tracks.map(t => t.codec).join(', ')}`);
+                });
+
+                hls.on(Hls.Events.BUFFER_APPENDING, (event, data) => {
+                    updateDebugInfo(`Appending to buffer: ${data.type}`);
+                });
+
+                hls.on(Hls.Events.BUFFER_APPENDED, (event, data) => {
+                    updateDebugInfo(`Appended to buffer: ${data.type}, ${data.timeRanges[data.type].length} ranges`);
+                });
+
+                hls.on(Hls.Events.BUFFER_EOS, (event, data) => {
+                    updateDebugInfo(`Buffer EOS: ${data.type}`);
+                });
+
+                video.addEventListener('encrypted', (e) => {
+                    updateDebugInfo(`Media encrypted event: ${e.initDataType}`);
+                });
+
+                video.addEventListener('waitingforkey', () => {
+                    updateDebugInfo('Waiting for decryption key');
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                setupNativeHLS();
+            } else {
+                showError('Your browser does not support HLS playback.');
+            }
+        }
+
+        function handleNetworkError(hls, data) {
+            updateDebugInfo('Attempting to recover from network error...');
+            hls.startLoad();
+        }
+
+        function handleMediaError(hls, data) {
+            updateDebugInfo('Attempting to recover from media error...');
+            hls.recoverMediaError();
+        }
+
+        function handleFatalError(hls, data) {
+            hls.destroy();
+            showError('An unrecoverable error occurred while loading the video. Please try again later.');
+        }
+
+        function setupNativeHLS() {
+            video.src = videoSrc;
+            video.addEventListener('loadedmetadata', () => {
+                updateDebugInfo('Native HLS playback initialized');
+            });
+            video.addEventListener('error', (e) => {
+                showError('An error occurred while loading the video. Please try again later.');
+                updateDebugInfo(`Native playback error: ${video.error.code} - ${video.error.message}`);
+            });
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorMessage.style.display = 'block';
+            video.style.display = 'none';
+        }
+
+        function updateDebugInfo(message) {
+            const timestamp = new Date().toISOString();
+            debugInfo.innerHTML += `${timestamp}: ${message}\n`;
+            debugInfo.scrollTop = debugInfo.scrollHeight;
+        }
+
+        window.addEventListener('load', initPlayer);
+    </script>
+</body>
+</html>

@@ -37,7 +37,7 @@ class PlayerScreen extends StatefulWidget {
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final String downloadUrl = 'http://140.245.49.98/video-files/1/';
+  final String baseUrl = 'http://140.245.49.98/video-files/1/';
   final List<String> files = [
     'playlist.m3u8',
     'segment0.ts',
@@ -66,23 +66,22 @@ class _PlayerScreenState extends State<PlayerScreen> {
           },
         ),
       );
-    downloadFilesAndCopyAssets();
+    downloadFilesAndLoadWebView();
   }
 
-  Future<void> downloadFilesAndCopyAssets() async {
+  Future<void> downloadFilesAndLoadWebView() async {
     try {
       await downloadFiles();
-      await copyAssetsToTempDir();
       checkServerStatusAndLoadWebView();
     } catch (e) {
-      print('Error in downloading files or copying assets: $e');
+      print('Error in downloading files or loading WebView: $e');
     }
   }
 
   Future<void> downloadFiles() async {
     Directory tempDir = await getTemporaryDirectory();
     for (String file in files) {
-      String url = '$downloadUrl$file';
+      String url = '$baseUrl$file';
       try {
         http.Response response = await http.get(Uri.parse(url));
         if (response.statusCode == 200) {
@@ -95,26 +94,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
       } catch (e) {
         print('Error downloading $file: $e');
       }
-    }
-  }
-
-  Future<void> copyAssetsToTempDir() async {
-    final Directory tempDir = await getTemporaryDirectory();
-    final List<String> assetPaths = [
-      'assets/web/enc.key',
-      'assets/web/jsplayer.js',
-      'assets/web/player - Copy.html',
-      'assets/web/player.html',
-      'assets/web/playerjs.js',
-    ];
-
-    for (String assetPath in assetPaths) {
-      final ByteData data = await rootBundle.load(assetPath);
-      final List<int> bytes = data.buffer.asUint8List();
-      final String tempFilePath = '${tempDir.path}/${assetPath.split('/').last}';
-      final File tempFile = File(tempFilePath);
-      await tempFile.writeAsBytes(bytes, flush: true);
-      print('Copied $assetPath to $tempFilePath');
     }
   }
 
@@ -157,40 +136,57 @@ void startServer() async {
 }
 
 Future<shelf.Response> _handleRequest(shelf.Request request) async {
+  // Clean up the URL path
   final String assetPath = Uri.decodeComponent(request.url.path);
-  final Directory tempDir = await getTemporaryDirectory();
-  final String filePath = '${tempDir.path}/$assetPath';
 
-  if (await _fileExists(filePath)) {
-    final byteData = await _loadFile(filePath);
-    final mimeType = _getMimeType(filePath);
-    return shelf.Response.ok(
-      byteData.buffer.asUint8List(),
-      headers: {'Content-Type': mimeType},
-    );
+  print('Received request for URL path: ${request.url.path}');
+  print('Decoded asset path: $assetPath');
+
+  if (assetPath.startsWith('video/')) {
+    final Directory tempDir = await getTemporaryDirectory();
+    final String filePath = path.join(tempDir.path, assetPath.replaceFirst('video/', ''));
+
+    if (await File(filePath).exists()) {
+      final file = File(filePath);
+      final mimeType = _getMimeType(filePath);
+      final bytes = await file.readAsBytes();
+      return shelf.Response.ok(
+        bytes,
+        headers: {'Content-Type': mimeType},
+      );
+    } else {
+      return shelf.Response.notFound('Video file not found');
+    }
   } else {
-    return shelf.Response.notFound('Asset not found');
+    // Determine the actual file path within the assets directory
+    final String filePath = 'assets/web/$assetPath';
+    print('Constructed file path: $filePath');
+
+    // Check if the file exists
+    if (await _fileExists(filePath)) {
+      print('File exists: $filePath');
+      final byteData = await rootBundle.load(filePath);
+      final mimeType = _getMimeType(filePath);
+      print('Serving asset: $filePath with MIME type: $mimeType');
+      return shelf.Response.ok(
+        byteData.buffer.asUint8List(),
+        headers: {'Content-Type': mimeType},
+      );
+    } else {
+      // Return a 404 response if the asset is not found
+      print('Error: Asset not found: $filePath');
+      return shelf.Response.notFound('Asset not found');
+    }
   }
 }
 
 Future<bool> _fileExists(String filePath) async {
   try {
-    final file = File(filePath);
-    return await file.exists();
+    await rootBundle.load(filePath);
+    return true;
   } catch (e) {
     print('Error checking file existence: $e');
     return false;
-  }
-}
-
-Future<ByteData> _loadFile(String filePath) async {
-  try {
-    final file = File(filePath);
-    final Uint8List fileBytes = await file.readAsBytes();
-    return ByteData.view(fileBytes.buffer);
-  } catch (e) {
-    print('Error loading file: $e');
-    throw Exception('File loading error');
   }
 }
 

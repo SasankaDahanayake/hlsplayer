@@ -2,7 +2,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:shelf/shelf.dart' as shelf;
@@ -10,28 +9,31 @@ import 'package:shelf/shelf_io.dart' as io;
 import 'package:path/path.dart' as path;
 
 class PlayerScreen extends StatefulWidget {
-  const PlayerScreen({Key? key}) : super(key: key);
+  const PlayerScreen({Key? key, required this.videoName}) : super(key: key);
+
+  final String videoName;
 
   @override
   _PlayerScreenState createState() => _PlayerScreenState();
 }
 
 class _PlayerScreenState extends State<PlayerScreen> {
-  final String baseUrl = 'http://140.245.49.98/video-files/1/';
-  final List<String> files = [
-    'playlist.m3u8',
-    'segment0.ts',
-    'segment1.ts',
-    'segment2.ts',
-    'segment3.ts',
-  ];
+  // final String baseUrl = 'http://140.245.49.98/video-files/1/';
+  // final List<String> files = [
+  //   'playlist.m3u8',
+  //   'segment0.ts',
+  //   'segment1.ts',
+  //   'segment2.ts',
+  //   'segment3.ts',
+  // ];
 
   late final WebViewController _controller;
 
   @override
   void initState() {
     super.initState();
-    startServer(); // Start the server in the main isolate
+    print('THIS IS THE VIDEO NAME ${widget.videoName}');
+    startServer(widget.videoName); // Start the server in the main isolate
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
@@ -52,31 +54,31 @@ class _PlayerScreenState extends State<PlayerScreen> {
 
   Future<void> downloadFilesAndLoadWebView() async {
     try {
-      await downloadFiles();
+      // await downloadFiles();
       checkServerStatusAndLoadWebView();
     } catch (e) {
       print('Error in downloading files or loading WebView: $e');
     }
   }
 
-  Future<void> downloadFiles() async {
-    Directory tempDir = await getTemporaryDirectory();
-    for (String file in files) {
-      String url = '$baseUrl$file';
-      try {
-        http.Response response = await http.get(Uri.parse(url));
-        if (response.statusCode == 200) {
-          File tempFile = File('${tempDir.path}/$file');
-          await tempFile.writeAsBytes(response.bodyBytes);
-          print('Downloaded $file to ${tempFile.path}');
-        } else {
-          print('Failed to download $file');
-        }
-      } catch (e) {
-        print('Error downloading $file: $e');
-      }
-    }
-  }
+  // Future<void> downloadFiles() async {
+  //   Directory tempDir = await getTemporaryDirectory();
+  //   for (String file in files) {
+  //     String url = '$baseUrl$file';
+  //     try {
+  //       http.Response response = await http.get(Uri.parse(url));
+  //       if (response.statusCode == 200) {
+  //         File tempFile = File('${tempDir.path}/$file');
+  //         await tempFile.writeAsBytes(response.bodyBytes);
+  //         print('Downloaded $file to ${tempFile.path}');
+  //       } else {
+  //         print('Failed to download $file');
+  //       }
+  //     } catch (e) {
+  //       print('Error downloading $file: $e');
+  //     }
+  //   }
+  // }
 
   void checkServerStatusAndLoadWebView() async {
     bool serverReady = await isServerRunning();
@@ -110,26 +112,29 @@ class _PlayerScreenState extends State<PlayerScreen> {
   }
 }
 
-void startServer() async {
+void startServer(String videoName) async {
   var handler = const shelf.Pipeline()
       .addMiddleware(shelf.logRequests())
-      .addHandler(_handleRequest);
+      .addHandler((shelf.Request request) => _handleRequest(request, videoName));
 
   var server = await io.serve(handler, '0.0.0.0', 8889);
   print('Server is running at http://${server.address.host}:${server.port}');
 }
 
-Future<shelf.Response> _handleRequest(shelf.Request request) async {
+Future<shelf.Response> _handleRequest(shelf.Request request, String videoName) async {
   // Clean up the URL path
   final String assetPath = Uri.decodeComponent(request.url.path);
+  const String videoSrc = 'playlist.m3u8';
+  const String segmentSrc = 'segment';
+
 
   print('Received request for URL path: ${request.url.path}');
   print('Decoded asset path: $assetPath');
 
-  if (assetPath.startsWith('video/')) {
+  if (assetPath.contains(videoSrc) || assetPath.contains(segmentSrc)) {
     final Directory tempDir = await getTemporaryDirectory();
-    final String filePath =
-    path.join(tempDir.path, assetPath.replaceFirst('video/', ''));
+    final String filePath = path.join(tempDir.path, 'video-files', videoName, assetPath);
+    print('this is the $filePath');
 
     if (await File(filePath).exists()) {
       final file = File(filePath);

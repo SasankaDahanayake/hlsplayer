@@ -3,11 +3,14 @@ import 'dart:isolate';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter_downloader/flutter_downloader.dart';
 import 'package:hls_player/player_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uni_links/uni_links.dart';
+import 'package:http/http.dart' as http;
+import 'package:html/parser.dart';
+
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -20,6 +23,9 @@ class HomeScreenState extends State<HomeScreen> {
   bool isDownloading = false;
   final ReceivePort _port = ReceivePort();
   List<String> folders = [];
+  String videoName = '';
+  String basePath = '';
+  List<String> filesBeingDownloaded = [];
 
   @override
   void initState() {
@@ -35,7 +41,7 @@ class HomeScreenState extends State<HomeScreen> {
       });
     });
 
-    FlutterDownloader.registerCallback(downloadCallback);
+    // FlutterDownloader.registerCallback(downloadCallback);
     _loadFolders();
 
   }
@@ -75,15 +81,29 @@ class HomeScreenState extends State<HomeScreen> {
       final separatorIndex = remainingUrl.indexOf(';');
 
       if (separatorIndex != -1) {
-        final videoName = remainingUrl.substring(0, separatorIndex);
+        videoName = remainingUrl.substring(0, separatorIndex);
         final fullUrl = remainingUrl.substring(separatorIndex + 1);
 
-        // Extract the path part after the domain
         final uri = Uri.parse(fullUrl);
-        final path = uri.path;
+        final pathSegments = uri.pathSegments;
 
-        print('Video Name: $videoName');
-        print('Path for Playlist File: $path');
+        if (pathSegments.isNotEmpty) {
+          final basePathSegments = pathSegments.sublist(0, pathSegments.length - 1);
+          basePath = Uri(
+            scheme: uri.scheme,
+            host: uri.host,
+            port: uri.hasPort ? uri.port : null,
+            pathSegments: basePathSegments,
+          ).toString();
+
+          print('Video Name: $videoName');
+          print('Base URL: $basePath');
+
+          _startDownload();
+
+        } else {
+          print('Invalid path in the URL');
+        }
       } else {
         print('Separator not found in the URL');
       }
@@ -102,41 +122,61 @@ class HomeScreenState extends State<HomeScreen> {
   Future<void> _startDownload() async {
     await requestPermissions();
     final tempDir = await getTemporaryDirectory();
-    const baseUrl = 'http://140.245.49.98/video-files/1/';
-    final files = [
-      'playlist.m3u8',
-      'segment0.ts',
-      'segment1.ts',
-      'segment2.ts',
-      'segment3.ts',
-    ];
 
     setState(() {
       isDownloading = true;
     });
 
-    final videoDir = Directory('${tempDir.path}/video-files/Video-1');
+    final videoDir = Directory('${tempDir.path}/video-files/$videoName');
     if (!await videoDir.exists()) {
       await videoDir.create(recursive: true);
     }
 
-    // Download the files
+    final files = await _fetchFiles(basePath);
+
     for (final file in files) {
-      await FlutterDownloader.enqueue(
-        url: '$baseUrl$file',
-        savedDir: videoDir.path,
-        fileName: file,
-        showNotification: true,
-        openFileFromNotification: true,
-      );
+      final filePath = '${videoDir.path}/$file';
+      if (!File(filePath).existsSync()) {
+        filesBeingDownloaded.add(file);
+        await _downloadFile('$basePath/$file', filePath);
+      }
     }
 
     setState(() {
       isDownloading = false;
+      filesBeingDownloaded.clear();
     });
-
     _loadFolders();
+  }
 
+  Future<List<String>> _fetchFiles(String baseUrl) async {
+    final response = await http.get(Uri.parse(baseUrl));
+
+    if (response.statusCode == 200) {
+      final document = parse(response.body);
+      final fileLinks = document.querySelectorAll('a');
+      final files = fileLinks.map((link) => link.attributes['href']).where((href) => href != null && href.endsWith('.m3u8') || href!.endsWith('.ts')).toList();
+      print('these are the files ${files.cast<String>()}');
+      return files.cast<String>();
+    } else {
+      throw Exception('Failed to load files from $baseUrl');
+    }
+  }
+
+
+  Future<void> _downloadFile(String url, String filePath) async {
+    try {
+      final response = await http.get(Uri.parse(url));
+      if (response.statusCode == 200) {
+        final file = File(filePath);
+        await file.writeAsBytes(response.bodyBytes);
+        print('Downloaded file: $url to $filePath'); // <-- Added debug statement
+      } else {
+        print('Failed to download file: $url. Status code: ${response.statusCode}'); // <-- Added debug statement
+      }
+    } catch (e) {
+      print('Error downloading file: $url. Error: $e'); // <-- Added debug statement
+    }
   }
 
   @override
@@ -145,34 +185,44 @@ class HomeScreenState extends State<HomeScreen> {
       appBar: AppBar(title: const Text('Home')),
       body: Stack(
         children: [
-          ListView.builder(
-            itemCount: folders.length,
-            itemBuilder: (context, index) {
-              final folderName = folders[index].split('/').last;
-              return ListTile(
-                title: Text(folderName),
-                onTap: () => _navigateToPlayerScreen(folders[index]),
-              );
-            },
+          Column(
+            children: [
+              Expanded(
+                child: ListView.builder(
+                  itemCount: folders.length,
+                  itemBuilder: (context, index) {
+                    final folderName = folders[index].split('/').last;
+                    return ListTile(
+                      title: Text(folderName),
+                      onTap: () => _navigateToPlayerScreen(folderName),
+                    );
+                  },
+                ),
+              ),
+              if (isDownloading)
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Downloading: $videoName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      ...filesBeingDownloaded.map((file) => Text(file)).toList(),
+                      const Center(child: CircularProgressIndicator()),
+                    ],
+                  ),
+                ),
+            ],
           ),
-          if (isDownloading)
-            const Center(
-              child: CircularProgressIndicator(),
-            ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _startDownload,
-        child: const Icon(Icons.download),
       ),
     );
   }
 
-  void _navigateToPlayerScreen(String folderPath) {
+  void _navigateToPlayerScreen(String videoName) {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => const PlayerScreen(),
+        builder: (context) => PlayerScreen(videoName: videoName),
       ),
     );
   }

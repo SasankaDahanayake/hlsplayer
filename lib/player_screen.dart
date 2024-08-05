@@ -28,6 +28,7 @@ class _PlayerScreenState extends State<PlayerScreen> {
   // ];
 
   late final WebViewController _controller;
+  HttpServer? server;
 
   @override
   void initState() {
@@ -50,6 +51,12 @@ class _PlayerScreenState extends State<PlayerScreen> {
         ),
       );
     downloadFilesAndLoadWebView();
+  }
+
+  @override
+  void dispose() {
+    server?.close();
+    super.dispose();
   }
 
   Future<void> downloadFilesAndLoadWebView() async {
@@ -110,62 +117,64 @@ class _PlayerScreenState extends State<PlayerScreen> {
   Widget build(BuildContext context) {
     return WebViewWidget(controller: _controller);
   }
-}
 
-void startServer(String videoName) async {
-  var handler = const shelf.Pipeline()
-      .addMiddleware(shelf.logRequests())
-      .addHandler((shelf.Request request) => _handleRequest(request, videoName));
+  void startServer(String videoName) async {
+    var handler = const shelf.Pipeline()
+        .addMiddleware(shelf.logRequests())
+        .addHandler(
+            (shelf.Request request) => _handleRequest(request, videoName));
 
-  var server = await io.serve(handler, '0.0.0.0', 8889);
-  print('Server is running at http://${server.address.host}:${server.port}');
-}
+    server = await io.serve(handler, '0.0.0.0', 8889);
+    print('Server is running at http://${server?.address.host}:${server?.port}');
+  }
 
-Future<shelf.Response> _handleRequest(shelf.Request request, String videoName) async {
-  // Clean up the URL path
-  final String assetPath = Uri.decodeComponent(request.url.path);
-  const String videoSrc = 'playlist.m3u8';
-  const String segmentSrc = 'segment';
+  Future<shelf.Response> _handleRequest(
+      shelf.Request request, String videoName) async {
+    final String assetPath = Uri.decodeComponent(request.url.path);
+    const String videoSrc = 'playlist.m3u8';
+    const String segmentSrc = 'segment';
 
+    print('Received request for URL path: ${request.url.path}');
+    print('Decoded asset path: $assetPath');
 
-  print('Received request for URL path: ${request.url.path}');
-  print('Decoded asset path: $assetPath');
+    if (assetPath.contains(videoSrc) || assetPath.contains(segmentSrc)) {
+      final Directory tempDir = await getTemporaryDirectory();
+      final String filePath =
+          path.join(tempDir.path, 'video-files', videoName, assetPath);
 
-  if (assetPath.contains(videoSrc) || assetPath.contains(segmentSrc)) {
-    final Directory tempDir = await getTemporaryDirectory();
-    final String filePath = path.join(tempDir.path, 'video-files', videoName, assetPath);
-    print('this is the $filePath');
+      print('this is the $filePath');
 
-    if (await File(filePath).exists()) {
-      final file = File(filePath);
-      final mimeType = _getMimeType(filePath);
-      final bytes = await file.readAsBytes();
-      return shelf.Response.ok(
-        bytes,
-        headers: {'Content-Type': mimeType},
-      );
+      if (await File(filePath).exists()) {
+        final file = File(filePath);
+        final mimeType = _getMimeType(filePath);
+        final bytes = await file.readAsBytes();
+        return shelf.Response.ok(
+          bytes,
+          headers: {'Content-Type': mimeType},
+        );
+      } else {
+        return shelf.Response.notFound('Video file not found');
+      }
     } else {
-      return shelf.Response.notFound('Video file not found');
-    }
-  } else {
-    // Determine the actual file path within the assets directory
-    final String filePath = 'assets/web/$assetPath';
-    print('Constructed file path: $filePath');
+      // Determine the actual file path within the assets directory
+      final String filePath = 'assets/web/$assetPath';
+      print('Constructed file path: $filePath');
 
-    // Check if the file exists
-    if (await _fileExists(filePath)) {
-      print('File exists: $filePath');
-      final byteData = await rootBundle.load(filePath);
-      final mimeType = _getMimeType(filePath);
-      print('Serving asset: $filePath with MIME type: $mimeType');
-      return shelf.Response.ok(
-        byteData.buffer.asUint8List(),
-        headers: {'Content-Type': mimeType},
-      );
-    } else {
-      // Return a 404 response if the asset is not found
-      print('Error: Asset not found: $filePath');
-      return shelf.Response.notFound('Asset not found');
+      // Check if the file exists
+      if (await _fileExists(filePath)) {
+        print('File exists: $filePath');
+        final byteData = await rootBundle.load(filePath);
+        final mimeType = _getMimeType(filePath);
+        print('Serving asset: $filePath with MIME type: $mimeType');
+        return shelf.Response.ok(
+          byteData.buffer.asUint8List(),
+          headers: {'Content-Type': mimeType},
+        );
+      } else {
+        // Return a 404 response if the asset is not found
+        print('Error: Asset not found: $filePath');
+        return shelf.Response.notFound('Asset not found');
+      }
     }
   }
 }
@@ -183,16 +192,16 @@ Future<bool> _fileExists(String filePath) async {
 String _getMimeType(String filePath) {
   final extension = path.extension(filePath);
   final mimeType = {
-    '.html': 'text/html',
-    '.js': 'application/javascript',
-    '.css': 'text/css',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.jpeg': 'image/jpeg',
-    '.m3u8': 'application/vnd.apple.mpegurl',
-    '.ts': 'video/MP2T',
-    '.key': 'application/octet-stream',
-  }[extension] ??
+        '.html': 'text/html',
+        '.js': 'application/javascript',
+        '.css': 'text/css',
+        '.png': 'image/png',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.m3u8': 'application/vnd.apple.mpegurl',
+        '.ts': 'video/MP2T',
+        '.key': 'application/octet-stream',
+      }[extension] ??
       'application/octet-stream';
 
   print('Determined MIME type for $filePath: $mimeType');

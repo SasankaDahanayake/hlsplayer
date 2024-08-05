@@ -24,6 +24,7 @@ class HomeScreenState extends State<HomeScreen> {
   final ReceivePort _port = ReceivePort();
   List<String> folders = [];
   String videoName = '';
+  String downloadedFile = '';
   String basePath = '';
   List<String> filesBeingDownloaded = [];
 
@@ -170,12 +171,15 @@ class HomeScreenState extends State<HomeScreen> {
       if (response.statusCode == 200) {
         final file = File(filePath);
         await file.writeAsBytes(response.bodyBytes);
-        print('Downloaded file: $url to $filePath'); // <-- Added debug statement
+        setState(() {
+          downloadedFile = 'Downloaded file: $url';
+        });
+        print('Downloaded file: $url to $filePath');
       } else {
-        print('Failed to download file: $url. Status code: ${response.statusCode}'); // <-- Added debug statement
+        print('Failed to download file: $url. Status code: ${response.statusCode}');
       }
     } catch (e) {
-      print('Error downloading file: $url. Error: $e'); // <-- Added debug statement
+      print('Error downloading file: $url. Error: $e');
     }
   }
 
@@ -207,6 +211,7 @@ class HomeScreenState extends State<HomeScreen> {
                     children: [
                       Text('Downloading: $videoName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       ...filesBeingDownloaded.map((file) => Text(file)).toList(),
+                      // Text(downloadedFile),
                       const Center(child: CircularProgressIndicator()),
                     ],
                   ),

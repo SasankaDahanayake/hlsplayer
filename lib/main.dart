@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:hls_player/home.dart';
 
 import 'download_screen.dart';
+import 'home.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized(); // Ensure binding is initialized

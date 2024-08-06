@@ -33,7 +33,6 @@ class _PlayerScreenState extends State<PlayerScreen> {
   @override
   void initState() {
     super.initState();
-    print('THIS IS THE VIDEO NAME ${widget.videoName}');
     startServer(widget.videoName); // Start the server in the main isolate
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)

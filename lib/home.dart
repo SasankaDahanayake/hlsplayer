@@ -2,8 +2,8 @@ import 'dart:io';
 import 'dart:isolate';
 import 'dart:ui';
 
+import 'package:eclass_poc/player_screen.dart';
 import 'package:flutter/material.dart';
-import 'package:hls_player/player_screen.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:uni_links/uni_links.dart';
@@ -31,6 +31,7 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _handleInitialLink();
     _initDeepLinkListener();
     IsolateNameServer.registerPortWithName(
       _port.sendPort,
@@ -44,7 +45,6 @@ class HomeScreenState extends State<HomeScreen> {
 
     // FlutterDownloader.registerCallback(downloadCallback);
     _loadFolders();
-
   }
 
   @override
@@ -64,6 +64,12 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _handleInitialLink() async {
+    final initialLink = await getInitialLink();
+    if (initialLink != null) {
+      _processLink(initialLink);
+    }
+  }
 
   _initDeepLinkListener() async {
     linkStream.listen((String? link) {
@@ -72,10 +78,10 @@ class HomeScreenState extends State<HomeScreen> {
     }, onError: (err) {
       print(err);
     });
-
   }
 
-  void _processLink(String url) {
+
+    void _processLink(String url) {
     const prefix = 'eclass-poc://';
     if (url.startsWith(prefix)) {
       final remainingUrl = url.substring(prefix.length);
@@ -89,7 +95,8 @@ class HomeScreenState extends State<HomeScreen> {
         final pathSegments = uri.pathSegments;
 
         if (pathSegments.isNotEmpty) {
-          final basePathSegments = pathSegments.sublist(0, pathSegments.length - 1);
+          final basePathSegments = pathSegments.sublist(
+              0, pathSegments.length - 1);
           basePath = Uri(
             scheme: uri.scheme,
             host: uri.host,
@@ -100,7 +107,7 @@ class HomeScreenState extends State<HomeScreen> {
           print('Video Name: $videoName');
           print('Base URL: $basePath');
 
-          _startDownload();
+            startDownload();
 
         } else {
           print('Invalid path in the URL');
@@ -113,14 +120,13 @@ class HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  static void downloadCallback(
-      String id, int status, int progress) {
+  static void downloadCallback(String id, int status, int progress) {
     final SendPort? send =
     IsolateNameServer.lookupPortByName('downloader_send_port');
     send?.send([id, status, progress]);
   }
 
-  Future<void> _startDownload() async {
+  Future<void> startDownload() async {
     await requestPermissions();
     final tempDir = await getTemporaryDirectory();
 
@@ -176,7 +182,8 @@ class HomeScreenState extends State<HomeScreen> {
         });
         print('Downloaded file: $url to $filePath');
       } else {
-        print('Failed to download file: $url. Status code: ${response.statusCode}');
+        print('Failed to download file: $url. Status code: ${response
+            .statusCode}');
       }
     } catch (e) {
       print('Error downloading file: $url. Error: $e');
@@ -186,11 +193,20 @@ class HomeScreenState extends State<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Home')),
+      appBar: AppBar(title: const Text('EClass POC')),
       body: Stack(
         children: [
           Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Text(
+                  'Downloaded Files:',
+                  style: TextStyle(fontSize: 18),
+                ),
+              ),
+              const SizedBox(height: 8),
               Expanded(
                 child: ListView.builder(
                   itemCount: folders.length,
@@ -209,9 +225,13 @@ class HomeScreenState extends State<HomeScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Downloading: $videoName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                      ...filesBeingDownloaded.map((file) => Text(file)).toList(),
-                      // Text(downloadedFile),
+                      Text(
+                        'Downloading: $videoName',
+                        style: const TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      ...filesBeingDownloaded.map((file) => Text(file))
+                          .toList(),
                       const Center(child: CircularProgressIndicator()),
                     ],
                   ),

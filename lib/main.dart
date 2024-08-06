@@ -22,6 +22,7 @@ class MyApp extends StatelessWidget {
       routes: {
         '/download': (context) => DownloadScreen(),
       },
+      debugShowCheckedModeBanner: false,
     );
   }
 }

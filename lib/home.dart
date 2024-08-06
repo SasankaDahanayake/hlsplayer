@@ -65,19 +65,28 @@ class HomeScreenState extends State<HomeScreen> {
   }
 
   void _handleInitialLink() async {
-    final initialLink = await getInitialLink();
-    if (initialLink != null) {
-      _processLink(initialLink);
+    try {
+      final initialLink = await getInitialLink();
+      if (initialLink != null) {
+        _processLink(initialLink);
+      }
+    } catch (e) {
+      print('Error handling initial link: $e');
     }
   }
 
-  _initDeepLinkListener() async {
-    linkStream.listen((String? link) {
-      print('this is the link $link');
-      _processLink(link!);
-    }, onError: (err) {
-      print(err);
-    });
+  void _initDeepLinkListener() {
+    linkStream.listen(
+          (String? link) {
+        if (link != null) {
+          print('Received link: $link');
+          _processLink(link);
+        }
+      },
+      onError: (err) {
+        print('Error in link stream: $err');
+      },
+    );
   }
 
 
